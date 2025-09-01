@@ -1,78 +1,48 @@
-// === Prosty stan ===
+// ======= STAN =======
 const state = {
   leagues: [],
-  selections: [], // [{matchId, outcome, odd, home, away}]
-  activeLeagues: new Set()
+  activeLeagues: new Set(),
+  // selection: { matchId, home, away, outcome, odd, prob? (0..1) }
+  selections: []
 };
 
-// === Elementy DOM (z bezpiecznymi fallbackami) ===
-const datePicker  = document.getElementById('datePicker') || document.querySelector('input[type="date"]') || document.querySelector('#date');
+// ======= DOM (z bezpiecznymi fallbackami) =======
+const datePicker  = document.getElementById('datePicker') || document.querySelector('input[type="date"]');
 const refreshBtn  = document.getElementById('refreshBtn') || document.getElementById('refresh');
 const searchInput = document.getElementById('searchInput') || document.getElementById('search');
 const matchCount  = document.getElementById('matchCount')  || document.querySelector('[data-match-count]');
 const matchesWrap =
   document.getElementById('matchesContainer') ||
   document.getElementById('matches') ||
-  document.querySelector('#app') ||
-  document.body;
+  document.querySelector('#app') || document.body;
 
-// === Utils ===
+// Kupon
+const selectionsEl    = document.getElementById('selections');      // kontener na pozycje
+const combinedOddsEl  = document.getElementById('combinedOdds');    // łączny kurs
+const selCountEl      = document.getElementById('selCount');        // licznik pozycji (opcjonalnie)
+const bankrollEl      = document.getElementById('bankroll');        // kapitał
+const calcKellyBtn    = document.getElementById('calcKelly');       // przycisk liczenia
+const kellyResultEl   = document.getElementById('kellyResult');     // wynik
+
+// ======= Utils =======
 const fmtTime = iso => {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 };
-
 const idOf = m => `${m.home}|${m.away}|${m.utcDate}`;
-
-// Akcent PL: 1 mecz / 2–4 mecze / 5+ meczów
 const pluralMecz = n => (n===1 ? 'mecz' : (n%10>=2&&n%10<=4&&!(n%100>=12&&n%100<=14) ? 'mecze' : 'meczów'));
 
-// Parsowanie różnych formatów daty -> YYYY-MM-DD
 function normalizeDateInput(raw) {
   if (!raw) return new Date().toISOString().slice(0,10);
-  const s = String(raw).trim().replace(/\s+/g,'').replace(/\./g,'-').replace(/\//g,'-');
-  // 2025-09-13
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  // 13-09-2025
-  const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(s);
+  const s = String(raw).trim().replace(/\s+/g,'').replace(/[./]/g,'-');
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;          // 2025-09-13
+  const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(s);        // 13-09-2025
   if (m) return `${m[3]}-${m[2]}-${m[1]}`;
-  // Fallback: dziś
   return new Date().toISOString().slice(0,10);
 }
 
-// === Selekcja kursów: jedna selekcja na mecz + toggle ===
-function toggleSelection(match, outcome, odd) {
-  const matchId = idOf(match);
-  const existing = state.selections.find(s => s.matchId === matchId);
-
-  // kliknięto ten sam wybór -> usuń
-  if (existing && existing.outcome === outcome) {
-    state.selections = state.selections.filter(s => s.matchId !== matchId);
-    updateCellsSelection(matchId, null);
-    saveSlip();
-    renderSlip();
-    return;
-  }
-
-  if (existing) {
-    existing.outcome = outcome;
-    existing.odd = odd;
-  } else {
-    state.selections.push({ matchId, outcome, odd, home: match.home, away: match.away });
-  }
-  updateCellsSelection(matchId, outcome);
-  saveSlip();
-  renderSlip();
-}
-
-function updateCellsSelection(matchId, outcome) {
-  document.querySelectorAll(`td.odd[data-mid="${CSS.escape(matchId)}"]`).forEach(td => {
-    if (outcome && td.dataset.outcome === outcome) td.classList.add('selected');
-    else td.classList.remove('selected');
-  });
-}
-
+// ======= PERSIST =======
 function saveSlip() {
   try { localStorage.setItem('matchiq_slip', JSON.stringify(state.selections)); } catch {}
 }
@@ -83,10 +53,8 @@ function loadSlip() {
   } catch {}
 }
 
-// === Render ===
+// ======= RENDER MECZÓW =======
 function buildLeagueChips() {
-  // jeśli w HTML masz pasek z chipami lig, możesz tu dodać ich generowanie
-  // na razie: domyślnie włącz wszystkie ligi
   if (state.activeLeagues.size === 0) {
     state.leagues.forEach(l => state.activeLeagues.add(l.name));
   }
@@ -95,7 +63,6 @@ function buildLeagueChips() {
 function renderMatches() {
   const q = (searchInput?.value || '').toLowerCase().trim();
   matchesWrap.querySelectorAll('.league-section').forEach(n => n.remove());
-
   let visible = 0;
 
   state.leagues.forEach(league => {
@@ -122,9 +89,7 @@ function renderMatches() {
         <tr>
           <th class="time">Czas</th>
           <th class="matchup">Mecz</th>
-          <th>1</th>
-          <th>X</th>
-          <th>2</th>
+          <th>1</th><th>X</th><th>2</th>
         </tr>
       </thead>
       <tbody></tbody>
@@ -168,7 +133,7 @@ function renderMatches() {
       tr.appendChild(td2);
       tbody.appendChild(tr);
 
-      // podświetl już wybrane po odświeżeniu
+      // odtwórz podświetlenie jeśli było wybrane
       const sel = state.selections.find(s => s.matchId === idOf(m));
       if (sel) updateCellsSelection(idOf(m), sel.outcome);
     });
@@ -180,19 +145,152 @@ function renderMatches() {
   if (matchCount) matchCount.textContent = `${visible} ${pluralMecz(visible)}`;
 }
 
-function renderSlip() {
-  // jeżeli masz własny markup kuponu, uzupełnij ten renderer.
-  // Tu tylko aktualizujemy łączny kurs i licznik pozycji (jeśli istnieją).
-  const combined = state.selections.reduce((acc, s) => acc * Number(s.odd || 1), 1);
-  const combinedEl = document.getElementById('combinedOdds');
-  const selCountEl = document.getElementById('selCount');
-  if (combinedEl) combinedEl.textContent = state.selections.length ? combined.toFixed(2) : '—';
-  if (selCountEl) selCountEl.textContent = String(state.selections.length);
+// ======= WYBÓR KURSÓW (1 na mecz + toggle) =======
+function updateCellsSelection(matchId, outcome) {
+  document.querySelectorAll(`td.odd[data-mid="${CSS.escape(matchId)}"]`).forEach(td => {
+    if (outcome && td.dataset.outcome === outcome) td.classList.add('selected');
+    else td.classList.remove('selected');
+  });
 }
 
-// === Ładowanie danych ===
+function toggleSelection(match, outcome, odd) {
+  const matchId = idOf(match);
+  const existing = state.selections.find(s => s.matchId === matchId);
+
+  if (existing && existing.outcome === outcome) {
+    // odznacz (usuń)
+    state.selections = state.selections.filter(s => s.matchId !== matchId);
+    updateCellsSelection(matchId, null);
+  } else if (existing) {
+    existing.outcome = outcome;
+    existing.odd = odd;
+  } else {
+    state.selections.push({ matchId, home: match.home, away: match.away, outcome, odd });
+  }
+
+  saveSlip();
+  renderSlip();
+}
+
+// ======= KUPON =======
+function renderSlip() {
+  if (!selectionsEl) return;
+
+  selectionsEl.innerHTML = ''; // wyczyść
+
+  // łączny kurs
+  const combined = state.selections.reduce((a, s) => a * Number(s.odd || 1), 1);
+  if (combinedOddsEl) combinedOddsEl.textContent = state.selections.length ? combined.toFixed(2) : '—';
+  if (selCountEl)     selCountEl.textContent     = String(state.selections.length);
+
+  // pozycje
+  state.selections.forEach(sel => {
+    const row = document.createElement('div');
+    row.className = 'selection-item';
+
+    // opis
+    const outcomeLabel = sel.outcome === 'home' ? '1'
+                       : sel.outcome === 'draw' ? 'X' : '2';
+    const desc = document.createElement('div');
+    desc.textContent = `${sel.home} — ${sel.away}  ${outcomeLabel} @ `;
+    const oddsSpan = document.createElement('span');
+    oddsSpan.className = 'odds';
+    oddsSpan.textContent = Number(sel.odd).toFixed(2);
+    desc.appendChild(oddsSpan);
+
+    // procent prawdopodobieństwa
+    const prob = document.createElement('input');
+    prob.type = 'number';
+    prob.className = 'prob-input';
+    prob.min = '0';
+    prob.max = '100';
+    prob.step = '0.1';
+    prob.placeholder = '%';
+    if (typeof sel.prob === 'number') prob.value = (sel.prob * 100).toString();
+
+    prob.addEventListener('input', () => {
+      const v = Number(prob.value);
+      if (!Number.isFinite(v)) { delete sel.prob; saveSlip(); return; }
+      sel.prob = Math.min(1, Math.max(0, v / 100)); // 0..1
+      saveSlip();
+    });
+
+    // usuń
+    const remove = document.createElement('button');
+    remove.className = 'remove-btn';
+    remove.textContent = '✖';
+    remove.title = 'Usuń z kuponu';
+    remove.addEventListener('click', () => {
+      // zdejmij zaznaczenie w liście meczów
+      updateCellsSelection(sel.matchId, null);
+      // usuń ze stanu
+      state.selections = state.selections.filter(s => s.matchId !== sel.matchId);
+      saveSlip();
+      renderSlip();
+    });
+
+    row.appendChild(desc);
+    row.appendChild(prob);
+    const unit = document.createElement('span');
+    unit.textContent = ' %';
+    row.appendChild(unit);
+    row.appendChild(remove);
+
+    selectionsEl.appendChild(row);
+  });
+}
+
+function calcKelly() {
+  if (!kellyResultEl) return;
+
+  if (!state.selections.length) {
+    kellyResultEl.textContent = 'Brak wybranych typów.';
+    kellyResultEl.className = 'negative';
+    return;
+  }
+
+  // sprawdź prawdopodobieństwa
+  const probs = [];
+  for (const sel of state.selections) {
+    if (typeof sel.prob !== 'number') {
+      kellyResultEl.textContent = 'Uzupełnij % prawdopodobieństwa dla każdego typu.';
+      kellyResultEl.className = 'negative';
+      return;
+    }
+    probs.push(sel.prob);
+  }
+
+  // łączny kurs i łączne prawdopodobieństwo (parlay)
+  const totalOdds = state.selections.reduce((a, s) => a * Number(s.odd || 1), 1);
+  const totalProb = probs.reduce((a, p) => a * p, 1);
+
+  const bankroll = Math.max(0, Number(bankrollEl?.value || 0));
+  if (!bankroll) {
+    kellyResultEl.textContent = 'Podaj kapitał (PLN).';
+    kellyResultEl.className = 'negative';
+    return;
+  }
+
+  const b = totalOdds - 1;
+  const p = totalProb;
+  const q = 1 - p;
+  const f = (b * p - q) / b;         // Kelly
+  const fClamped = Math.max(0, f);
+  const stake = bankroll * fClamped;
+
+  if (f <= 0) {
+    kellyResultEl.textContent = 'Kelly ≤ 0 — nie obstawiaj (brak dodatniej wartości oczekiwanej).';
+    kellyResultEl.className = 'zero';
+    return;
+  }
+
+  kellyResultEl.textContent =
+    `Kelly: ${(f * 100).toFixed(2)}% • Łączny kurs: ${totalOdds.toFixed(2)} • Stawka ≈ ${stake.toFixed(2)} PLN`;
+  kellyResultEl.className = 'positive';
+}
+
+// ======= ŁADOWANIE DANYCH =======
 async function loadMatchesFor(dateISO) {
-  // wymuszamy świeże dane – omijamy edge cache
   const url = `/matches/${dateISO}?nocache=1`;
   let data;
   try {
@@ -204,17 +302,17 @@ async function loadMatchesFor(dateISO) {
   }
 
   state.leagues = Array.isArray(data.leagues) ? data.leagues : [];
-
-  // domyślnie aktywuj wszystkie ligi (przy pierwszym załadowaniu)
   if (state.activeLeagues.size === 0) state.leagues.forEach(l => state.activeLeagues.add(l.name));
 
   buildLeagueChips();
   renderMatches();
+  renderSlip();
 
-  // Gdy pusto, a backend podał nextDate – zaproponuj przeskok
+  // Banner z „przeskocz do najbliższej daty”, jeśli pusto
   const bannerId = 'infoBanner';
   document.getElementById(bannerId)?.remove();
-  if ((!state.leagues.length || (matchCount && matchCount.textContent.startsWith('0 '))) && data.nextDate && data.nextDate !== dateISO) {
+  const visible = matchesWrap.querySelectorAll('.league-section').length > 0;
+  if (!visible && data.nextDate && data.nextDate !== dateISO) {
     const box = document.createElement('div');
     box.id = bannerId;
     box.style.margin = '10px';
@@ -233,23 +331,21 @@ async function loadMatchesFor(dateISO) {
   }
 }
 
-// === Zdarzenia ===
+// ======= ZDARZENIA =======
 refreshBtn && refreshBtn.addEventListener('click', () => {
   const iso = normalizeDateInput(datePicker?.value || '');
   loadMatchesFor(iso);
 });
-
 datePicker && datePicker.addEventListener('change', () => {
   const iso = normalizeDateInput(datePicker.value);
   loadMatchesFor(iso);
 });
-
 searchInput && searchInput.addEventListener('input', () => renderMatches());
+calcKellyBtn && calcKellyBtn.addEventListener('click', calcKelly);
 
-// === Start ===
+// ======= START =======
 (function boot(){
   loadSlip();
-  // ustaw domyślnie dziś (nie zmieniaj użytkownikowi formatu)
   const todayISO = new Date().toISOString().slice(0,10);
   if (datePicker && !datePicker.value) datePicker.value = todayISO;
   loadMatchesFor(normalizeDateInput(datePicker?.value || todayISO));
