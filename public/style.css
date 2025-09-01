@@ -6,6 +6,7 @@ body {
   margin: 0;
   padding: 0;
 }
+
 header {
   text-align: center;
   padding: 1rem;
@@ -13,7 +14,7 @@ header {
 header h1 {
   font-size: 1.8rem;
   margin: 0;
-  color: #00BFA5; 
+  color: #00BFA5;
 }
 header .subtitle {
   font-size: 1rem;
@@ -21,6 +22,7 @@ header .subtitle {
   margin-top: 0.3rem;
 }
 
+/* Pasek sterowania */
 .controls {
   display: flex;
   flex-wrap: wrap;
@@ -32,6 +34,7 @@ header .subtitle {
   position: sticky;
   top: 0;
   border-bottom: 1px solid #333;
+  z-index: 5;
 }
 .controls input[type="date"] {
   background: #2A2A2A;
@@ -63,7 +66,7 @@ header .subtitle {
   color: #888;
 }
 .controls #searchInput {
-  padding: 0.3rem 1.8rem 0.3rem 0.5rem; 
+  padding: 0.3rem 1.8rem 0.3rem 0.5rem;
   background: #2A2A2A;
   border: 1px solid #444;
   color: #ECECEC;
@@ -73,6 +76,7 @@ header .subtitle {
   font-weight: bold;
 }
 
+/* Sekcje lig */
 .league-section {
   margin: 1rem 0;
 }
@@ -82,6 +86,8 @@ header .subtitle {
   padding: 0.3rem 0.6rem;
   margin: 0;
 }
+
+/* Tabela meczów */
 .matches-table {
   width: 100%;
   border-collapse: collapse;
@@ -106,20 +112,39 @@ header .subtitle {
   text-align: left;
   padding-left: 0.5rem;
 }
+
+/* Kursy (klikane) – dopracowane stany */
 .matches-table td.odd {
   width: 13%;
   cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  transition: background .2s ease, border-color .2s ease, box-shadow .2s ease, transform .05s ease;
 }
 .matches-table td.odd:hover {
-  background: #333;
+  background: #2b2b2b;
+  border-color: #3a3a3a;
 }
 .matches-table td.odd:active {
-  background: #555;
+  transform: translateY(1px);
 }
+/* Trwały wybór */
 .matches-table td.odd.selected {
-  background: #00695C;
+  background: linear-gradient(0deg, #00695C, #00796B);
+  color: #fff;
+  border-color: #00bfa5;
+  box-shadow: 0 0 0 1px rgba(0,191,165,.45) inset, 0 0 0 2px rgba(0,191,165,.25);
+}
+.matches-table td.odd.selected:hover {
+  background: linear-gradient(0deg, #00796B, #00897B);
+}
+/* Dostępność – focus klawiaturą */
+.matches-table td.odd:focus-visible {
+  outline: 2px solid #00bfa5;
+  outline-offset: 2px;
 }
 
+/* Kupon */
 #betSlip {
   background: #1E1E1E;
   padding: 1rem;
@@ -210,6 +235,8 @@ header .subtitle {
 #kellyResult.negative {
   color: #F44336;
 }
+
+/* Utility */
 .hidden {
   display: none !important;
 }

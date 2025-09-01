@@ -1,244 +1,334 @@
-// public/script.js
+// === Stan aplikacji ===
+const state = {
+  leagues: [],
+  activeLeagues: new Set(),
+  selections: [],               // { matchId, home, away, outcome, odd }
+  theme: (localStorage.getItem('theme') || 'dark'),
+};
 
-const datePicker = document.getElementById('datePicker');
-const refreshBtn = document.getElementById('refreshBtn');
-const searchInput = document.getElementById('searchInput');
-const matchCountSpan = document.getElementById('matchCount');
-const matchesContainer = document.getElementById('matchesContainer');
-const selectionsDiv = document.getElementById('selections');
-const combinedOddsP = document.getElementById('combinedOdds');
-const bankrollInput = document.getElementById('bankroll');
+// === Elementy DOM ===
+const datePicker   = document.getElementById('datePicker');
+const refreshBtn   = document.getElementById('refreshBtn');
+const searchInput  = document.getElementById('searchInput');
+const matchesWrap  = document.getElementById('matchesContainer');
+const leagueChips  = document.getElementById('leagueChips');
+const matchCount   = document.getElementById('matchCount');
+const themeToggle  = document.getElementById('themeToggle');
+
+const slip         = document.getElementById('slip');
+const slipToggle   = document.getElementById('slipToggle');
+const selectionsEl = document.getElementById('selections');
+const combinedOddsEl = document.getElementById('combinedOdds');
+const selCountEl   = document.getElementById('selCount');
+const bankrollEl   = document.getElementById('bankroll');
+const kellyFractionEl = document.getElementById('kellyFraction');
+const kellyFractionVal = document.getElementById('kellyFractionVal');
 const calcKellyBtn = document.getElementById('calcKelly');
-const kellyResultP = document.getElementById('kellyResult');
+const kellyResult  = document.getElementById('kellyResult');
+const toastEl      = document.getElementById('toast');
 
-const todayStr = new Date().toISOString().slice(0, 10);
-datePicker.value = todayStr;
+// === Ustawienia startowe ===
+document.documentElement.setAttribute('data-theme', state.theme);
+if (themeToggle) themeToggle.textContent = state.theme === 'dark' ? '🌙' : '☀️';
 
-async function loadMatches(dateStr) {
-  matchCountSpan.textContent = "Ładowanie..."; 
+const today = new Date().toISOString().slice(0,10);
+if (datePicker) {
+  datePicker.value = today;
+  datePicker.min = today;
+}
+
+// === Utilsy ===
+const fmtTime = iso => {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+};
+const pluralMecz = n => (n===1 ? 'mecz' : (n%10>=2&&n%10<=4&&!(n%100>=12&&n%100<=14) ? 'mecze' : 'meczów'));
+const showToast = msg => { if(!toastEl) return; toastEl.textContent = msg; toastEl.classList.add('show'); setTimeout(()=>toastEl.classList.remove('show'),1500); };
+const matchIdOf = (m) => `${m.home}|${m.away}|${m.utcDate}`; // unikalny w obrębie dnia
+
+// === Ładowanie meczów ===
+async function loadMatches(dateStr){
+  renderSkeleton();
   try {
-    const response = await fetch(`/matches/${dateStr}`);
-    const data = await response.json();
-    if (data.error) {
-      matchCountSpan.textContent = "Błąd ładowania danych";
-      return;
-    }
-    renderMatches(data.leagues);
-    applySearchFilter(); 
-  } catch (err) {
-    console.error("Error fetching matches:", err);
-    matchCountSpan.textContent = "Błąd połączenia z API";
+    const r = await fetch(`/matches/${dateStr}`);
+    const data = await r.json();
+    state.leagues = Array.isArray(data.leagues) ? data.leagues : [];
+    buildLeagueChips();
+    renderMatches();   // podczas renderu zaznaczymy wcześniej wybrane selekcje (po matchId)
+  } catch(e){
+    matchesWrap.innerHTML = `<div class="league glass"><div class="muted" style="padding:12px">Błąd ładowania danych.</div></div>`;
   }
 }
-
-function renderMatches(leagues) {
-  matchesContainer.innerHTML = "";  
-  let totalMatches = 0;
-  leagues.forEach(league => {
-    const leagueName = league.name;
-    const matchList = league.matches;
-    if (!matchList || matchList.length === 0) return;
-    const sectionDiv = document.createElement('div');
-    sectionDiv.className = "league-section";
-    sectionDiv.dataset.league = leagueName;
-    const header = document.createElement('h3');
-    header.textContent = leagueName;
-    sectionDiv.appendChild(header);
-    const table = document.createElement('table');
-    table.className = "matches-table";
-    table.innerHTML = `
-      <thead>
-        <tr><th>Czas</th><th>Mecz</th><th>1</th><th>X</th><th>2</th></tr>
-      </thead>
-      <tbody></tbody>
-    `;
-    const tbody = table.querySelector('tbody');
-    matchList.forEach(match => {
-      totalMatches++;
-      const matchDate = new Date(match.utcDate);
-      const hours = matchDate.getHours().toString().padStart(2, '0');
-      const minutes = matchDate.getMinutes().toString().padStart(2, '0');
-      const timeLocal = `${hours}:${minutes}`;
-      const row = document.createElement('tr');
-      row.className = "match-row";
-      row.dataset.league = leagueName;
-      row.innerHTML = `
-        <td class="time">${timeLocal}</td>
-        <td class="matchup">${match.home} – ${match.away}</td>
-        <td class="odd" data-outcome="home" data-home="${match.home}" data-away="${match.away}" data-odd="${match.odds.home}">${match.odds.home.toFixed(2)}</td>
-        <td class="odd" data-outcome="draw" data-home="${match.home}" data-away="${match.away}" data-odd="${match.odds.draw}">${match.odds.draw.toFixed(2)}</td>
-        <td class="odd" data-outcome="away" data-home="${match.home}" data-away="${match.away}" data-odd="${match.odds.away}">${match.odds.away.toFixed(2)}</td>
-      `;
-      tbody.appendChild(row);
-    });
-    sectionDiv.appendChild(table);
-    matchesContainer.appendChild(sectionDiv);
-  });
-  updateMatchCount();
-  attachOddsHandlers();
+function renderSkeleton(){
+  matchesWrap.innerHTML = '';
+  const skeleton = document.createElement('div');
+  skeleton.className = 'league glass';
+  skeleton.innerHTML = `
+    <div class="league-header skeleton" style="width: 220px; height: 22px;"></div>
+    <div class="match-card skeleton"></div>
+    <div class="match-card skeleton"></div>
+    <div class="match-card skeleton"></div>`;
+  matchesWrap.appendChild(skeleton.cloneNode(true));
+  matchesWrap.appendChild(skeleton.cloneNode(true));
+  matchesWrap.appendChild(skeleton.cloneNode(true));
 }
 
-function updateMatchCount() {
-  const visibleMatches = document.querySelectorAll('.match-row:not(.hidden)');
-  const count = visibleMatches.length;
-  let label;
-  if (count === 1) {
-    label = "mecz";
-  } else if (count % 10 >= 2 && count % 10 <= 4 && !(count % 100 >= 12 && count % 100 <= 14)) {
-    label = "mecze";
+// Chipy lig
+function buildLeagueChips(){
+  if (!leagueChips) return;
+  leagueChips.innerHTML = '';
+  const names = state.leagues.map(l => l.name);
+  if (state.activeLeagues.size === 0) names.forEach(n => state.activeLeagues.add(n));
+  names.forEach(name=>{
+    const chip = document.createElement('button');
+    chip.className = 'chip' + (state.activeLeagues.has(name) ? ' active' : '');
+    chip.textContent = name.replace(/\s*\(.*?\)\s*/,'');
+    chip.title = name;
+    chip.addEventListener('click', ()=>{
+      if (state.activeLeagues.has(name)) state.activeLeagues.delete(name);
+      else state.activeLeagues.add(name);
+      chip.classList.toggle('active');
+      renderMatches();
+    });
+    leagueChips.appendChild(chip);
+  });
+}
+
+// Render listy meczów (karty)
+function renderMatches(){
+  const q = (searchInput?.value || '').toLowerCase().trim();
+  matchesWrap.innerHTML = '';
+  let visibleCount = 0;
+
+  state.leagues.forEach(league=>{
+    if (!state.activeLeagues.has(league.name)) return;
+
+    const toShow = league.matches.filter(m=>{
+      const hay = `${league.name} ${m.home} ${m.away}`.toLowerCase();
+      return !q || hay.includes(q);
+    });
+    if (toShow.length === 0) return;
+
+    const leagueEl = document.createElement('div');
+    leagueEl.className = 'league glass';
+
+    const header = document.createElement('div');
+    header.className = 'league-header';
+    header.textContent = league.name;
+    leagueEl.appendChild(header);
+
+    const list = document.createElement('div');
+    list.className = 'match-list';
+
+    toShow.forEach(m=>{
+      visibleCount++;
+      const mId = matchIdOf(m);
+      const selected = state.selections.find(s => s.matchId === mId)?.outcome || null;
+
+      const card = document.createElement('div');
+      card.className = 'match-card';
+
+      const left = document.createElement('div');
+      left.className = 'time';
+      left.textContent = fmtTime(m.utcDate);
+
+      const mid = document.createElement('div');
+      mid.className = 'teams';
+      mid.textContent = `${m.home} — ${m.away}`;
+
+      const right = document.createElement('div');
+      right.className = 'odds';
+
+      const best = bestKey(m.odds);
+      ['home','draw','away'].forEach(k=>{
+        const btn = document.createElement('button');
+        btn.className = 'odd' + (k===best ? ' best' : '') + (selected===k ? ' selected' : '');
+        btn.dataset.key = k;
+        btn.dataset.matchId = mId;
+        btn.dataset.home = m.home;
+        btn.dataset.away = m.away;
+        btn.dataset.odd = Number(m.odds[k]).toFixed(2);
+        btn.textContent = Number(m.odds[k]).toFixed(2);
+        btn.addEventListener('click', ()=> onOddClick(m, k, btn));
+        right.appendChild(btn);
+      });
+
+      card.appendChild(left);
+      card.appendChild(mid);
+      card.appendChild(right);
+      list.appendChild(card);
+    });
+
+    leagueEl.appendChild(list);
+    matchesWrap.appendChild(leagueEl);
+  });
+
+  matchCount.textContent = `${visibleCount} ${pluralMecz(visibleCount)}`;
+}
+
+function bestKey(odds){
+  const entries = Object.entries(odds).map(([k,v])=>[k, Number(v)]);
+  entries.sort((a,b)=> b[1]-a[1]);
+  return entries[0]?.[0] || 'home';
+}
+
+// === Jedna selekcja na mecz + toggle ===
+function onOddClick(match, outcome, btn){
+  const matchId = matchIdOf(match);
+  const existing = state.selections.find(s => s.matchId === matchId);
+
+  // 1) jeśli klikamy to samo co już wybrane → odznacz (remove)
+  if (existing && existing.outcome === outcome) {
+    state.selections = state.selections.filter(s => s.matchId !== matchId);
+    updateButtonsSelection(matchId, null);
+    renderSlip();
+    showToast('Usunięto z kuponu');
+    return;
+  }
+
+  // 2) w przeciwnym razie ustaw/zmień wybór dla tego meczu (zastępuje poprzedni)
+  const odd = Number(match.odds[outcome]);
+  if (existing) {
+    existing.outcome = outcome;
+    existing.odd = odd;
   } else {
-    label = "meczów";
-  }
-  matchCountSpan.textContent = `${count} ${label}`;
-}
-
-function attachOddsHandlers() {
-  const oddCells = document.querySelectorAll('.matches-table td.odd');
-  oddCells.forEach(cell => {
-    cell.addEventListener('click', () => {
-      const outcome = cell.dataset.outcome;  
-      const homeTeam = cell.dataset.home;
-      const awayTeam = cell.dataset.away;
-      const oddValue = parseFloat(cell.dataset.odd);
-      addSelection(homeTeam, awayTeam, outcome, oddValue);
+    state.selections.push({
+      matchId, home: match.home, away: match.away, outcome, odd
     });
+  }
+  updateButtonsSelection(matchId, outcome);
+  renderSlip();
+  showToast('Zaktualizowano kupon');
+}
+
+// podświetlanie przycisków w karcie meczu
+function updateButtonsSelection(matchId, outcome){
+  const buttons = document.querySelectorAll(`.odd[data-match-id="${matchId}"]`);
+  buttons.forEach(b=>{
+    if (outcome && b.dataset.key === outcome) b.classList.add('selected');
+    else b.classList.remove('selected');
   });
 }
 
-function addSelection(home, away, outcome, odd) {
-  let description = "";
-  if (outcome === "home") {
-    description = `${home} wygra z ${away}`;
-  } else if (outcome === "away") {
-    description = `${away} wygra z ${home}`;
-  } else if (outcome === "draw") {
-    description = `${home} zremisuje z ${away}`;
-  }
-  const itemDiv = document.createElement('div');
-  itemDiv.className = "selection-item";
-  itemDiv.innerHTML = `
-    <span>${description} @ <span class="odds">${odd.toFixed(2)}</span></span>
-    <input type="number" class="prob-input" min="0" max="100" placeholder="%" />
-    <span>%</span>
-    <button class="remove-btn" title="Usuń">✖</button>
-  `;
-  selectionsDiv.appendChild(itemDiv);
-  updateCombinedOdds();
-  const removeBtn = itemDiv.querySelector('.remove-btn');
-  removeBtn.addEventListener('click', () => {
-    itemDiv.remove();
-    updateCombinedOdds();
+// === Kupon ===
+function renderSlip(){
+  selectionsEl.innerHTML = '';
+  selCountEl.textContent = state.selections.length;
+
+  state.selections.forEach(sel=>{
+    const el = document.createElement('div');
+    el.className = 'sel';
+
+    const desc = document.createElement('div');
+    desc.className = 'desc';
+    const label =
+      sel.outcome==='home' ? `${sel.home} wygra z ${sel.away}` :
+      sel.outcome==='away' ? `${sel.away} wygra z ${sel.home}` :
+      `${sel.home} zremisuje z ${sel.away}`;
+    desc.innerHTML = `${label} @ <span class="odds">${sel.odd.toFixed(2)}</span>`;
+
+    const ctr = document.createElement('div');
+    ctr.className = 'controls';
+    const prob = document.createElement('input');
+    prob.className = 'prob';
+    prob.type = 'number'; prob.min = '0'; prob.max='100';
+    prob.placeholder = '%'; prob.title = 'Twoje prawdopodobieństwo (w %)';
+    const rm = document.createElement('button');
+    rm.className = 'remove'; rm.title = 'Usuń'; rm.textContent = '✖';
+    rm.addEventListener('click', ()=>{
+      // usuń ze stanu
+      state.selections = state.selections.filter(s => s.matchId !== sel.matchId);
+      // odznacz w widoku meczów
+      updateButtonsSelection(sel.matchId, null);
+      renderSlip();
+    });
+
+    ctr.appendChild(prob);
+    ctr.appendChild(document.createTextNode('%'));
+    ctr.appendChild(rm);
+    el.appendChild(desc);
+    el.appendChild(ctr);
+    selectionsEl.appendChild(el);
   });
+
+  // łączny kurs
+  const total = state.selections.reduce((acc,s)=> acc*s.odd, 1);
+  combinedOddsEl.textContent = state.selections.length ? total.toFixed(2) : '—';
+
+  // zapisz kupon
+  localStorage.setItem('matchiq_slip', JSON.stringify(state.selections));
 }
 
-function updateCombinedOdds() {
-  const oddsSpans = selectionsDiv.querySelectorAll('.selection-item .odds');
-  let combined = 1;
-  oddsSpans.forEach(span => {
-    const oddVal = parseFloat(span.textContent);
-    combined *= oddVal;
-  });
-  if (oddsSpans.length === 0) {
-    combinedOddsP.textContent = ""; 
-    return;
-  }
-  combinedOddsP.textContent = `Łączny kurs: ${combined.toFixed(2)}`;
-}
-
-function applySearchFilter() {
-  const query = searchInput.value.toLowerCase().trim();
-  const allRows = document.querySelectorAll('.match-row');
-  if (query === "") {
-    allRows.forEach(row => row.classList.remove('hidden'));
-    document.querySelectorAll('.league-section').forEach(sec => sec.classList.remove('hidden'));
-    updateMatchCount();
-    return;
-  }
-  allRows.forEach(row => {
-    const leagueName = row.dataset.league.toLowerCase();
-    const text = row.textContent.toLowerCase();
-    if (text.includes(query) || leagueName.includes(query)) {
-      row.classList.remove('hidden');
-    } else {
-      row.classList.add('hidden');
+function restoreSlip(){
+  try {
+    const saved = JSON.parse(localStorage.getItem('matchiq_slip') || '[]');
+    if (Array.isArray(saved)) {
+      state.selections = saved;
+      renderSlip();
     }
-  });
-  const sections = document.querySelectorAll('.league-section');
-  sections.forEach(sec => {
-    const hasVisible = sec.querySelector('.match-row:not(.hidden)') !== null;
-    if (!hasVisible) {
-      sec.classList.add('hidden');
-    } else {
-      sec.classList.remove('hidden');
-    }
-  });
-  updateMatchCount();
+  } catch {}
 }
 
-function calculateKelly() {
-  const selections = document.querySelectorAll('.selection-item');
-  if (selections.length === 0) {
-    kellyResultP.textContent = "Brak wybranych zakładów.";
-    kellyResultP.className = "";
+// Kelly
+function calcKelly(){
+  if (!state.selections.length) {
+    kellyResult.textContent = 'Brak wybranych zakładów.'; kellyResult.className='kelly-result';
     return;
   }
+  const bankroll = Math.max(0, Number(bankrollEl.value)||0);
+  const kFrac   = Math.max(0, Math.min(1, Number(kellyFractionEl?.value)||1)); // gdy brak suwaka, weź 1
 
   let combinedOdds = 1;
   let combinedProb = 1;
-  let allProbProvided = true;
-  selections.forEach(item => {
-    const oddVal = parseFloat(item.querySelector('.odds').textContent);
-    const probInput = item.querySelector('.prob-input');
-    let p = parseFloat(probInput.value);
-    if (isNaN(p)) {
-      allProbProvided = false;
+  const probInputs = selectionsEl.querySelectorAll('.sel .prob');
+  if (probInputs.length !== state.selections.length) return;
+
+  for (let i=0;i<state.selections.length;i++){
+    const odd = state.selections[i].odd;
+    combinedOdds *= odd;
+
+    const raw = Number(probInputs[i].value);
+    if (Number.isNaN(raw)) {
+      kellyResult.textContent = 'Uzupełnij prawdopodobieństwo dla każdego typu.'; 
+      kellyResult.className='kelly-result negative';
       return;
     }
-    if (p > 1) p = p / 100;  
-    else if (p <= 1) {
-    }
-    if (p > 1) p = 1;  
-    if (p < 0) p = 0;
-    combinedOdds *= oddVal;
+    let p = raw > 1 ? raw/100 : raw; // 60 => 0.6
+    p = Math.min(1, Math.max(0, p));
     combinedProb *= p;
-  });
-  if (!allProbProvided) {
-    kellyResultP.textContent = "Uzupełnij prawdopodobieństwo dla każdego typu.";
-    kellyResultP.className = "negative";
-    return;
   }
 
   const b = combinedOdds - 1;
   const p = combinedProb;
   const q = 1 - p;
-  const fraction = (b * p - q) / b;
-  const bankroll = parseFloat(bankrollInput.value) || 0;
-  if (fraction <= 0 || bankroll <= 0) {
-    kellyResultP.textContent = "Nie obstawiaj (brak dodatniej wartości oczekiwanej).";
-    kellyResultP.className = fraction < 0 ? "negative" : "zero";
-  } else {
-    let percent = (fraction * 100).toFixed(2);
-    if (percent > 100) percent = "100";  
-    const stake = (bankroll * fraction).toFixed(2);
-    kellyResultP.textContent = `Zalecana stawka: ${percent}% (≈ ${stake} PLN)`;
-    kellyResultP.className = "positive";
+  const f = (b*p - q) / b;
+  const fAdj = Math.max(0, f) * kFrac;
+
+  if (f <= 0 || bankroll <= 0) {
+    kellyResult.textContent = 'Nie obstawiaj (brak dodatniej wartości oczekiwanej).';
+    kellyResult.className = 'kelly-result ' + (f < 0 ? 'negative' : 'zero');
+    return;
   }
+  const stake = bankroll * fAdj;
+  kellyResult.textContent = `Kelly: ${(f*100).toFixed(2)}% • Frakcja: ${(fAdj*100).toFixed(2)}% • Stawka ≈ ${stake.toFixed(2)} PLN`;
+  kellyResult.className = 'kelly-result positive';
 }
 
-
-refreshBtn.addEventListener('click', () => {
-  const date = datePicker.value;
-  loadMatches(date);
-});
-datePicker.addEventListener('change', () => {
-
-  loadMatches(datePicker.value);
-});
-searchInput.addEventListener('input', () => {
-  applySearchFilter();
-});
-calcKellyBtn.addEventListener('click', () => {
-  calculateKelly();
+// === Zdarzenia ===
+if (refreshBtn) refreshBtn.addEventListener('click', ()=> loadMatches(datePicker.value));
+if (datePicker)  datePicker.addEventListener('change', ()=> loadMatches(datePicker.value));
+if (searchInput) searchInput.addEventListener('input', ()=> renderMatches());
+if (kellyFractionEl) kellyFractionEl.addEventListener('input', ()=> kellyFractionVal.textContent = `${Number(kellyFractionEl.value).toFixed(2)}×`);
+if (calcKellyBtn) calcKellyBtn.addEventListener('click', calcKelly);
+if (slipToggle)   slipToggle.addEventListener('click', ()=> slip.classList.toggle('open'));
+if (themeToggle)  themeToggle.addEventListener('click', ()=>{
+  state.theme = (state.theme === 'dark' ? 'light' : 'dark');
+  localStorage.setItem('theme', state.theme);
+  document.documentElement.setAttribute('data-theme', state.theme);
+  themeToggle.textContent = state.theme === 'dark' ? '🌙' : '☀️';
 });
 
-loadMatches(todayStr);
+// === Start ===
+restoreSlip();
+loadMatches(datePicker.value);
