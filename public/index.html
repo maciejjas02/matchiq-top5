@@ -1,0 +1,45 @@
+<!-- public/index.html -->
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MatchIQ – Top 5 Leagues Odds</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Header / Title -->
+  <header>
+    <h1>MatchIQ – Top 5 Lig Europy</h1>
+    <p class="subtitle">Dzisiejsze spotkania i szybkie typy bukmacherskie</p>
+  </header>
+
+  <!-- Controls for date selection and search -->
+  <div class="controls">
+    <input type="date" id="datePicker" />
+    <button id="refreshBtn">Odśwież</button>
+    <label class="search-label">
+      <input type="text" id="searchInput" placeholder="Szukaj drużyny lub ligi..." />
+      <span class="search-icon">🔎</span>
+    </label>
+    <span id="matchCount"></span>
+  </div>
+
+  <!-- Container for match listings -->
+  <div id="matchesContainer"></div>
+
+  <!-- Bet slip section -->
+  <section id="betSlip">
+    <h2>Twój kupon</h2>
+    <div id="selections"></div>
+    <p id="combinedOdds"></p>
+    <div class="kelly-inputs">
+      <label>Kapitał: <input type="number" id="bankroll" value="100" /> PLN</label>
+      <button id="calcKelly">Oblicz stawkę</button>
+    </div>
+    <p id="kellyResult"></p>
+  </section>
+
+  <script src="script.js"></script>
+</body>
+</html>

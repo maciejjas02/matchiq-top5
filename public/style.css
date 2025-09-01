@@ -1,0 +1,215 @@
+/* public/style.css */
+body {
+  background: #121212;
+  color: #ECECEC;
+  font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+header {
+  text-align: center;
+  padding: 1rem;
+}
+header h1 {
+  font-size: 1.8rem;
+  margin: 0;
+  color: #00BFA5; 
+}
+header .subtitle {
+  font-size: 1rem;
+  color: #aaa;
+  margin-top: 0.3rem;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: #1E1E1E;
+  padding: 0.5rem 1rem;
+  position: sticky;
+  top: 0;
+  border-bottom: 1px solid #333;
+}
+.controls input[type="date"] {
+  background: #2A2A2A;
+  border: 1px solid #444;
+  color: #ECECEC;
+  padding: 0.2rem 0.5rem;
+}
+.controls #refreshBtn {
+  background: #00BFA5;
+  color: #000;
+  border: none;
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+  font-weight: bold;
+}
+.controls #refreshBtn:hover {
+  background: #02A18A;
+}
+.search-label {
+  position: relative;
+  display: inline-block;
+}
+.search-label .search-icon {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: #888;
+}
+.controls #searchInput {
+  padding: 0.3rem 1.8rem 0.3rem 0.5rem; 
+  background: #2A2A2A;
+  border: 1px solid #444;
+  color: #ECECEC;
+}
+#matchCount {
+  margin-left: auto;
+  font-weight: bold;
+}
+
+.league-section {
+  margin: 1rem 0;
+}
+.league-section h3 {
+  background: #00BFA5;
+  color: #000;
+  padding: 0.3rem 0.6rem;
+  margin: 0;
+}
+.matches-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1rem;
+}
+.matches-table thead th {
+  background: #333;
+  color: #BBB;
+  font-weight: normal;
+  padding: 0.3rem;
+}
+.matches-table tbody td {
+  border-bottom: 1px solid #333;
+  padding: 0.4rem 0.2rem;
+  text-align: center;
+}
+.matches-table td.time {
+  width: 15%;
+}
+.matches-table td.matchup {
+  width: 45%;
+  text-align: left;
+  padding-left: 0.5rem;
+}
+.matches-table td.odd {
+  width: 13%;
+  cursor: pointer;
+}
+.matches-table td.odd:hover {
+  background: #333;
+}
+.matches-table td.odd:active {
+  background: #555;
+}
+.matches-table td.odd.selected {
+  background: #00695C;
+}
+
+#betSlip {
+  background: #1E1E1E;
+  padding: 1rem;
+}
+#betSlip h2 {
+  font-size: 1.2rem;
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid #333;
+  padding-bottom: 0.3rem;
+}
+#selections {
+  margin-bottom: 0.5rem;
+}
+.selection-item {
+  padding: 0.3rem 0;
+  border-bottom: 1px solid #333;
+}
+.selection-item:last-child {
+  border-bottom: none;
+}
+.selection-item span.odds {
+  color: #00BFA5;
+  font-weight: bold;
+}
+.selection-item input.prob-input {
+  width: 4rem;
+  margin-left: 0.5rem;
+  margin-right: 0.2rem;
+  padding: 0.1rem 0.2rem;
+  background: #2A2A2A;
+  border: 1px solid #444;
+  color: #fff;
+}
+.selection-item button.remove-btn {
+  background: none;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  margin-left: 0.5rem;
+}
+.selection-item button.remove-btn:hover {
+  color: #fff;
+}
+#combinedOdds {
+  font-weight: bold;
+  margin: 0.5rem 0;
+}
+.kelly-inputs {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 0.5rem 0;
+}
+.kelly-inputs label {
+  font-size: 0.9rem;
+}
+.kelly-inputs input#bankroll {
+  width: 5rem;
+  padding: 0.1rem 0.2rem;
+  background: #2A2A2A;
+  border: 1px solid #444;
+  color: #fff;
+  margin-left: 0.3rem;
+}
+#calcKelly {
+  background: #00BFA5;
+  color: #000;
+  border: none;
+  padding: 0.4rem 0.8rem;
+  font-weight: bold;
+  cursor: pointer;
+}
+#calcKelly:hover {
+  background: #02A18A;
+}
+#kellyResult {
+  font-size: 1.1rem;
+  margin-top: 0.5rem;
+  font-weight: bold;
+}
+#kellyResult.positive {
+  color: #00FF74;
+}
+#kellyResult.zero {
+  color: #FFA000;
+}
+#kellyResult.negative {
+  color: #F44336;
+}
+.hidden {
+  display: none !important;
+}

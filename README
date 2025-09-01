@@ -1,0 +1,10 @@
+# MatchIQ — Top 5 lig • Kursy & Kelly
+
+Aplikacja pokazująca mecze Top 5 lig (EPL, La Liga, Bundesliga, Serie A, Ligue 1) z kursami 1X2 + kalkulator kryterium Kellego.
+
+## Uruchomienie
+```bash
+cp .env.example .env   # uzupełnij ODDS_API_KEY
+npm install
+npm run dev
+# otwórz http://localhost:3000
