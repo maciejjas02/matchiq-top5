@@ -4,7 +4,7 @@ Aplikacja pokazująca mecze Top 5 lig (EPL, La Liga, Bundesliga, Serie A, Ligue 
 
 ## Uruchomienie
 ```bash
-cp .env.example .env   # uzupełnij ODDS_API_KEY
+cp .env.example .env  
 npm install
 npm run dev
 # otwórz http://localhost:3000
