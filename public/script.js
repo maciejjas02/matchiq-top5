@@ -1,372 +1,256 @@
-// === Stan aplikacji ===
+// === Prosty stan ===
 const state = {
   leagues: [],
-  activeLeagues: new Set(),
-  selections: [],               // { matchId, home, away, outcome, odd }
-  theme: (localStorage.getItem('theme') || 'dark'),
+  selections: [], // [{matchId, outcome, odd, home, away}]
+  activeLeagues: new Set()
 };
 
-// === Elementy DOM ===
-const datePicker   = document.getElementById('datePicker');
-const refreshBtn   = document.getElementById('refreshBtn');
-const searchInput  = document.getElementById('searchInput');
-const matchesWrap  = document.getElementById('matchesContainer');
-const leagueChips  = document.getElementById('leagueChips');
-const matchCount   = document.getElementById('matchCount');
-const themeToggle  = document.getElementById('themeToggle');
+// === Elementy DOM (z bezpiecznymi fallbackami) ===
+const datePicker  = document.getElementById('datePicker') || document.querySelector('input[type="date"]') || document.querySelector('#date');
+const refreshBtn  = document.getElementById('refreshBtn') || document.getElementById('refresh');
+const searchInput = document.getElementById('searchInput') || document.getElementById('search');
+const matchCount  = document.getElementById('matchCount')  || document.querySelector('[data-match-count]');
+const matchesWrap =
+  document.getElementById('matchesContainer') ||
+  document.getElementById('matches') ||
+  document.querySelector('#app') ||
+  document.body;
 
-const slip         = document.getElementById('slip');
-const slipToggle   = document.getElementById('slipToggle');
-const selectionsEl = document.getElementById('selections');
-const combinedOddsEl = document.getElementById('combinedOdds');
-const selCountEl   = document.getElementById('selCount');
-const bankrollEl   = document.getElementById('bankroll');
-const kellyFractionEl = document.getElementById('kellyFraction');
-const kellyFractionVal = document.getElementById('kellyFractionVal');
-const calcKellyBtn = document.getElementById('calcKelly');
-const kellyResult  = document.getElementById('kellyResult');
-const toastEl      = document.getElementById('toast');
-
-// === Ustawienia startowe ===
-document.documentElement.setAttribute('data-theme', state.theme);
-if (themeToggle) themeToggle.textContent = state.theme === 'dark' ? '🌙' : '☀️';
-
-const today = new Date().toISOString().slice(0,10);
-if (datePicker) {
-  datePicker.value = today;
-  datePicker.min = today;
-}
-
-// === Utilsy ===
+// === Utils ===
 const fmtTime = iso => {
   const d = new Date(iso);
-  if (isNaN(d.getTime())) return '—';
+  if (Number.isNaN(d.getTime())) return '—';
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 };
+
+const idOf = m => `${m.home}|${m.away}|${m.utcDate}`;
+
+// Akcent PL: 1 mecz / 2–4 mecze / 5+ meczów
 const pluralMecz = n => (n===1 ? 'mecz' : (n%10>=2&&n%10<=4&&!(n%100>=12&&n%100<=14) ? 'mecze' : 'meczów'));
-const showToast = msg => { if(!toastEl) return; toastEl.textContent = msg; toastEl.classList.add('show'); setTimeout(()=>toastEl.classList.remove('show'),1500); };
-const matchIdOf = (m) => `${m.home}|${m.away}|${m.utcDate}`; // unikalny w obrębie dnia
 
-// === Ładowanie meczów ===
-async function loadMatches(dateStr){
-  renderSkeleton();
-  try {
-    const r = await fetch(`/matches/${dateStr}`);
-    const data = await r.json();
-    state.leagues = Array.isArray(data.leagues) ? data.leagues : [];
-    buildLeagueChips();
-    renderMatches();
-
-    // komunikaty
-    const hasLimit = (data.meta?.errors || []).some(e => e.status === 429);
-    const hasAuth  = (data.meta?.errors || []).some(e => e.status === 401 || e.status === 403);
-
-    const banner = document.getElementById('infoBanner') || (() => {
-      const b = document.createElement('div');
-      b.id = 'infoBanner';
-      b.style.margin = '10px';
-      b.style.padding = '10px';
-      b.style.border = '1px solid #333';
-      b.style.background = '#232323';
-      b.style.borderRadius = '8px';
-      b.style.color = '#ddd';
-      matchesWrap.parentElement.insertBefore(b, matchesWrap);
-      return b;
-    })();
-
-    banner.innerHTML = ""; // reset
-
-    if (hasLimit) {
-      banner.innerHTML = "Przekroczono limit zapytań The Odds API (429). Spróbuj za kilka minut.";
-    } else if (hasAuth) {
-      banner.innerHTML = "Błąd autoryzacji do The Odds API (401/403). Sprawdź klucz w Cloudflare Pages → Environment variables.";
-    } else if (!state.leagues.length) {
-      if (data.nextDate && data.nextDate !== dateStr) {
-        banner.innerHTML = `Brak kursów dla tej daty. Najbliższe mecze: <strong>${data.nextDate}</strong> <button id="goNextDate" style="margin-left:8px; padding:4px 8px;">Przejdź</button>`;
-        banner.querySelector('#goNextDate').addEventListener('click', ()=>{
-          datePicker.value = data.nextDate;
-          loadMatches(data.nextDate);
-        });
-      } else {
-        banner.innerHTML = "Brak kursów na ten dzień (jeszcze nieopublikowane lub przerwa).";
-      }
-    } else {
-      banner.remove();
-    }
-  } catch(e){
-    matchesWrap.innerHTML = `<div class="league-section"><div style="padding:12px;color:#ccc">Błąd ładowania danych.</div></div>`;
-  }
+// Parsowanie różnych formatów daty -> YYYY-MM-DD
+function normalizeDateInput(raw) {
+  if (!raw) return new Date().toISOString().slice(0,10);
+  const s = String(raw).trim().replace(/\s+/g,'').replace(/\./g,'-').replace(/\//g,'-');
+  // 2025-09-13
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // 13-09-2025
+  const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(s);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  // Fallback: dziś
+  return new Date().toISOString().slice(0,10);
 }
 
-function renderSkeleton(){
-  matchesWrap.innerHTML = '';
-  const skeleton = document.createElement('div');
-  skeleton.className = 'league glass';
-  skeleton.innerHTML = `
-    <div class="league-header skeleton" style="width: 220px; height: 22px;"></div>
-    <div class="match-card skeleton"></div>
-    <div class="match-card skeleton"></div>
-    <div class="match-card skeleton"></div>`;
-  matchesWrap.appendChild(skeleton.cloneNode(true));
-  matchesWrap.appendChild(skeleton.cloneNode(true));
-  matchesWrap.appendChild(skeleton.cloneNode(true));
-}
-
-// Chipy lig
-function buildLeagueChips(){
-  if (!leagueChips) return;
-  leagueChips.innerHTML = '';
-  const names = state.leagues.map(l => l.name);
-  if (state.activeLeagues.size === 0) names.forEach(n => state.activeLeagues.add(n));
-  names.forEach(name=>{
-    const chip = document.createElement('button');
-    chip.className = 'chip' + (state.activeLeagues.has(name) ? ' active' : '');
-    chip.textContent = name.replace(/\s*\(.*?\)\s*/,'');
-    chip.title = name;
-    chip.addEventListener('click', ()=>{
-      if (state.activeLeagues.has(name)) state.activeLeagues.delete(name);
-      else state.activeLeagues.add(name);
-      chip.classList.toggle('active');
-      renderMatches();
-    });
-    leagueChips.appendChild(chip);
-  });
-}
-
-// Render listy meczów (karty)
-function renderMatches(){
-  const q = (searchInput?.value || '').toLowerCase().trim();
-  matchesWrap.innerHTML = '';
-  let visibleCount = 0;
-
-  state.leagues.forEach(league=>{
-    if (!state.activeLeagues.has(league.name)) return;
-
-    const toShow = league.matches.filter(m=>{
-      const hay = `${league.name} ${m.home} ${m.away}`.toLowerCase();
-      return !q || hay.includes(q);
-    });
-    if (toShow.length === 0) return;
-
-    const leagueEl = document.createElement('div');
-    leagueEl.className = 'league glass';
-
-    const header = document.createElement('div');
-    header.className = 'league-header';
-    header.textContent = league.name;
-    leagueEl.appendChild(header);
-
-    const list = document.createElement('div');
-    list.className = 'match-list';
-
-    toShow.forEach(m=>{
-      visibleCount++;
-      const mId = matchIdOf(m);
-      const selected = state.selections.find(s => s.matchId === mId)?.outcome || null;
-
-      const card = document.createElement('div');
-      card.className = 'match-card';
-
-      const left = document.createElement('div');
-      left.className = 'time';
-      left.textContent = fmtTime(m.utcDate);
-
-      const mid = document.createElement('div');
-      mid.className = 'teams';
-      mid.textContent = `${m.home} — ${m.away}`;
-
-      const right = document.createElement('div');
-      right.className = 'odds';
-
-      const best = bestKey(m.odds);
-      ['home','draw','away'].forEach(k=>{
-        const btn = document.createElement('button');
-        btn.className = 'odd' + (k===best ? ' best' : '') + (selected===k ? ' selected' : '');
-        btn.dataset.key = k;
-        btn.dataset.matchId = mId;
-        btn.dataset.home = m.home;
-        btn.dataset.away = m.away;
-        btn.dataset.odd = Number(m.odds[k]).toFixed(2);
-        btn.textContent = Number(m.odds[k]).toFixed(2);
-        btn.addEventListener('click', ()=> onOddClick(m, k, btn));
-        right.appendChild(btn);
-      });
-
-      card.appendChild(left);
-      card.appendChild(mid);
-      card.appendChild(right);
-      list.appendChild(card);
-    });
-
-    leagueEl.appendChild(list);
-    matchesWrap.appendChild(leagueEl);
-  });
-
-  matchCount.textContent = `${visibleCount} ${pluralMecz(visibleCount)}`;
-}
-
-function bestKey(odds){
-  const entries = Object.entries(odds).map(([k,v])=>[k, Number(v)]);
-  entries.sort((a,b)=> b[1]-a[1]);
-  return entries[0]?.[0] || 'home';
-}
-
-// === Jedna selekcja na mecz + toggle ===
-function onOddClick(match, outcome, btn){
-  const matchId = matchIdOf(match);
+// === Selekcja kursów: jedna selekcja na mecz + toggle ===
+function toggleSelection(match, outcome, odd) {
+  const matchId = idOf(match);
   const existing = state.selections.find(s => s.matchId === matchId);
 
-  // 1) jeśli klikamy to samo co już wybrane → odznacz (remove)
+  // kliknięto ten sam wybór -> usuń
   if (existing && existing.outcome === outcome) {
     state.selections = state.selections.filter(s => s.matchId !== matchId);
-    updateButtonsSelection(matchId, null);
+    updateCellsSelection(matchId, null);
+    saveSlip();
     renderSlip();
-    showToast('Usunięto z kuponu');
     return;
   }
 
-  // 2) w przeciwnym razie ustaw/zmień wybór dla tego meczu (zastępuje poprzedni)
-  const odd = Number(match.odds[outcome]);
   if (existing) {
     existing.outcome = outcome;
     existing.odd = odd;
   } else {
-    state.selections.push({
-      matchId, home: match.home, away: match.away, outcome, odd
-    });
+    state.selections.push({ matchId, outcome, odd, home: match.home, away: match.away });
   }
-  updateButtonsSelection(matchId, outcome);
+  updateCellsSelection(matchId, outcome);
+  saveSlip();
   renderSlip();
-  showToast('Zaktualizowano kupon');
 }
 
-// podświetlanie przycisków w karcie meczu
-function updateButtonsSelection(matchId, outcome){
-  const buttons = document.querySelectorAll(`.odd[data-match-id="${matchId}"]`);
-  buttons.forEach(b=>{
-    if (outcome && b.dataset.key === outcome) b.classList.add('selected');
-    else b.classList.remove('selected');
+function updateCellsSelection(matchId, outcome) {
+  document.querySelectorAll(`td.odd[data-mid="${CSS.escape(matchId)}"]`).forEach(td => {
+    if (outcome && td.dataset.outcome === outcome) td.classList.add('selected');
+    else td.classList.remove('selected');
   });
 }
 
-// === Kupon ===
-function renderSlip(){
-  selectionsEl.innerHTML = '';
-  selCountEl.textContent = state.selections.length;
-
-  state.selections.forEach(sel=>{
-    const el = document.createElement('div');
-    el.className = 'sel';
-
-    const desc = document.createElement('div');
-    desc.className = 'desc';
-    const label =
-      sel.outcome==='home' ? `${sel.home} wygra z ${sel.away}` :
-      sel.outcome==='away' ? `${sel.away} wygra z ${sel.home}` :
-      `${sel.home} zremisuje z ${sel.away}`;
-    desc.innerHTML = `${label} @ <span class="odds">${sel.odd.toFixed(2)}</span>`;
-
-    const ctr = document.createElement('div');
-    ctr.className = 'controls';
-    const prob = document.createElement('input');
-    prob.className = 'prob';
-    prob.type = 'number'; prob.min = '0'; prob.max='100';
-    prob.placeholder = '%'; prob.title = 'Twoje prawdopodobieństwo (w %)';
-    const rm = document.createElement('button');
-    rm.className = 'remove'; rm.title = 'Usuń'; rm.textContent = '✖';
-    rm.addEventListener('click', ()=>{
-      // usuń ze stanu
-      state.selections = state.selections.filter(s => s.matchId !== sel.matchId);
-      // odznacz w widoku meczów
-      updateButtonsSelection(sel.matchId, null);
-      renderSlip();
-    });
-
-    ctr.appendChild(prob);
-    ctr.appendChild(document.createTextNode('%'));
-    ctr.appendChild(rm);
-    el.appendChild(desc);
-    el.appendChild(ctr);
-    selectionsEl.appendChild(el);
-  });
-
-  // łączny kurs
-  const total = state.selections.reduce((acc,s)=> acc*s.odd, 1);
-  combinedOddsEl.textContent = state.selections.length ? total.toFixed(2) : '—';
-
-  // zapisz kupon
-  localStorage.setItem('matchiq_slip', JSON.stringify(state.selections));
+function saveSlip() {
+  try { localStorage.setItem('matchiq_slip', JSON.stringify(state.selections)); } catch {}
 }
-
-function restoreSlip(){
+function loadSlip() {
   try {
-    const saved = JSON.parse(localStorage.getItem('matchiq_slip') || '[]');
-    if (Array.isArray(saved)) {
-      state.selections = saved;
-      renderSlip();
-    }
+    const s = JSON.parse(localStorage.getItem('matchiq_slip') || '[]');
+    if (Array.isArray(s)) state.selections = s;
   } catch {}
 }
 
-// Kelly
-function calcKelly(){
-  if (!state.selections.length) {
-    kellyResult.textContent = 'Brak wybranych zakładów.'; kellyResult.className='kelly-result';
-    return;
+// === Render ===
+function buildLeagueChips() {
+  // jeśli w HTML masz pasek z chipami lig, możesz tu dodać ich generowanie
+  // na razie: domyślnie włącz wszystkie ligi
+  if (state.activeLeagues.size === 0) {
+    state.leagues.forEach(l => state.activeLeagues.add(l.name));
   }
-  const bankroll = Math.max(0, Number(bankrollEl.value)||0);
-  const kFrac   = Math.max(0, Math.min(1, Number(kellyFractionEl?.value)||1)); // gdy brak suwaka, weź 1
+}
 
-  let combinedOdds = 1;
-  let combinedProb = 1;
-  const probInputs = selectionsEl.querySelectorAll('.sel .prob');
-  if (probInputs.length !== state.selections.length) return;
+function renderMatches() {
+  const q = (searchInput?.value || '').toLowerCase().trim();
+  matchesWrap.querySelectorAll('.league-section').forEach(n => n.remove());
 
-  for (let i=0;i<state.selections.length;i++){
-    const odd = state.selections[i].odd;
-    combinedOdds *= odd;
+  let visible = 0;
 
-    const raw = Number(probInputs[i].value);
-    if (Number.isNaN(raw)) {
-      kellyResult.textContent = 'Uzupełnij prawdopodobieństwo dla każdego typu.'; 
-      kellyResult.className='kelly-result negative';
-      return;
-    }
-    let p = raw > 1 ? raw/100 : raw; // 60 => 0.6
-    p = Math.min(1, Math.max(0, p));
-    combinedProb *= p;
+  state.leagues.forEach(league => {
+    if (!state.activeLeagues.has(league.name)) return;
+
+    const filtered = league.matches.filter(m => {
+      if (!q) return true;
+      const hay = `${league.name} ${m.home} ${m.away}`.toLowerCase();
+      return hay.includes(q);
+    });
+    if (!filtered.length) return;
+
+    const section = document.createElement('section');
+    section.className = 'league-section';
+
+    const h3 = document.createElement('h3');
+    h3.textContent = league.name;
+    section.appendChild(h3);
+
+    const table = document.createElement('table');
+    table.className = 'matches-table';
+    table.innerHTML = `
+      <thead>
+        <tr>
+          <th class="time">Czas</th>
+          <th class="matchup">Mecz</th>
+          <th>1</th>
+          <th>X</th>
+          <th>2</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    `;
+    const tbody = table.querySelector('tbody');
+
+    filtered.forEach(m => {
+      visible++;
+      const tr = document.createElement('tr');
+
+      const tdTime = document.createElement('td');
+      tdTime.className = 'time';
+      tdTime.textContent = fmtTime(m.utcDate);
+
+      const tdMatch = document.createElement('td');
+      tdMatch.className = 'matchup';
+      tdMatch.textContent = `${m.home} — ${m.away}`;
+
+      const makeOddCell = (key) => {
+        const td = document.createElement('td');
+        td.className = 'odd';
+        td.tabIndex = 0;
+        td.dataset.mid = idOf(m);
+        td.dataset.outcome = key;
+        td.textContent = Number(m.odds[key]).toFixed(2);
+        td.addEventListener('click', () => toggleSelection(m, key, Number(m.odds[key])));
+        td.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); td.click(); }
+        });
+        return td;
+      };
+
+      const td1 = makeOddCell('home');
+      const tdX = makeOddCell('draw');
+      const td2 = makeOddCell('away');
+
+      tr.appendChild(tdTime);
+      tr.appendChild(tdMatch);
+      tr.appendChild(td1);
+      tr.appendChild(tdX);
+      tr.appendChild(td2);
+      tbody.appendChild(tr);
+
+      // podświetl już wybrane po odświeżeniu
+      const sel = state.selections.find(s => s.matchId === idOf(m));
+      if (sel) updateCellsSelection(idOf(m), sel.outcome);
+    });
+
+    section.appendChild(table);
+    matchesWrap.appendChild(section);
+  });
+
+  if (matchCount) matchCount.textContent = `${visible} ${pluralMecz(visible)}`;
+}
+
+function renderSlip() {
+  // jeżeli masz własny markup kuponu, uzupełnij ten renderer.
+  // Tu tylko aktualizujemy łączny kurs i licznik pozycji (jeśli istnieją).
+  const combined = state.selections.reduce((acc, s) => acc * Number(s.odd || 1), 1);
+  const combinedEl = document.getElementById('combinedOdds');
+  const selCountEl = document.getElementById('selCount');
+  if (combinedEl) combinedEl.textContent = state.selections.length ? combined.toFixed(2) : '—';
+  if (selCountEl) selCountEl.textContent = String(state.selections.length);
+}
+
+// === Ładowanie danych ===
+async function loadMatchesFor(dateISO) {
+  // wymuszamy świeże dane – omijamy edge cache
+  const url = `/matches/${dateISO}?nocache=1`;
+  let data;
+  try {
+    const r = await fetch(url);
+    data = await r.json();
+  } catch (e) {
+    console.error('Fetch error', e);
+    data = { leagues: [] };
   }
 
-  const b = combinedOdds - 1;
-  const p = combinedProb;
-  const q = 1 - p;
-  const f = (b*p - q) / b;
-  const fAdj = Math.max(0, f) * kFrac;
+  state.leagues = Array.isArray(data.leagues) ? data.leagues : [];
 
-  if (f <= 0 || bankroll <= 0) {
-    kellyResult.textContent = 'Nie obstawiaj (brak dodatniej wartości oczekiwanej).';
-    kellyResult.className = 'kelly-result ' + (f < 0 ? 'negative' : 'zero');
-    return;
+  // domyślnie aktywuj wszystkie ligi (przy pierwszym załadowaniu)
+  if (state.activeLeagues.size === 0) state.leagues.forEach(l => state.activeLeagues.add(l.name));
+
+  buildLeagueChips();
+  renderMatches();
+
+  // Gdy pusto, a backend podał nextDate – zaproponuj przeskok
+  const bannerId = 'infoBanner';
+  document.getElementById(bannerId)?.remove();
+  if ((!state.leagues.length || (matchCount && matchCount.textContent.startsWith('0 '))) && data.nextDate && data.nextDate !== dateISO) {
+    const box = document.createElement('div');
+    box.id = bannerId;
+    box.style.margin = '10px';
+    box.style.padding = '10px';
+    box.style.background = '#232';
+    box.style.border = '1px solid #333';
+    box.style.borderRadius = '8px';
+    box.style.color = '#ddd';
+    box.innerHTML = `Brak kursów dla tej daty. Najbliższe mecze: <b>${data.nextDate}</b>
+      <button id="jumpNext" style="margin-left:8px;padding:4px 8px;cursor:pointer;">Przejdź</button>`;
+    matchesWrap.parentElement?.insertBefore(box, matchesWrap);
+    box.querySelector('#jumpNext').addEventListener('click', () => {
+      if (datePicker) datePicker.value = data.nextDate;
+      loadMatchesFor(data.nextDate);
+    });
   }
-  const stake = bankroll * fAdj;
-  kellyResult.textContent = `Kelly: ${(f*100).toFixed(2)}% • Frakcja: ${(fAdj*100).toFixed(2)}% • Stawka ≈ ${stake.toFixed(2)} PLN`;
-  kellyResult.className = 'kelly-result positive';
 }
 
 // === Zdarzenia ===
-if (refreshBtn) refreshBtn.addEventListener('click', ()=> loadMatches(datePicker.value));
-if (datePicker)  datePicker.addEventListener('change', ()=> loadMatches(datePicker.value));
-if (searchInput) searchInput.addEventListener('input', ()=> renderMatches());
-if (kellyFractionEl) kellyFractionEl.addEventListener('input', ()=> kellyFractionVal.textContent = `${Number(kellyFractionEl.value).toFixed(2)}×`);
-if (calcKellyBtn) calcKellyBtn.addEventListener('click', calcKelly);
-if (slipToggle)   slipToggle.addEventListener('click', ()=> slip.classList.toggle('open'));
-if (themeToggle)  themeToggle.addEventListener('click', ()=>{
-  state.theme = (state.theme === 'dark' ? 'light' : 'dark');
-  localStorage.setItem('theme', state.theme);
-  document.documentElement.setAttribute('data-theme', state.theme);
-  themeToggle.textContent = state.theme === 'dark' ? '🌙' : '☀️';
+refreshBtn && refreshBtn.addEventListener('click', () => {
+  const iso = normalizeDateInput(datePicker?.value || '');
+  loadMatchesFor(iso);
 });
 
+datePicker && datePicker.addEventListener('change', () => {
+  const iso = normalizeDateInput(datePicker.value);
+  loadMatchesFor(iso);
+});
+
+searchInput && searchInput.addEventListener('input', () => renderMatches());
+
 // === Start ===
-restoreSlip();
-loadMatches(datePicker.value);
+(function boot(){
+  loadSlip();
+  // ustaw domyślnie dziś (nie zmieniaj użytkownikowi formatu)
+  const todayISO = new Date().toISOString().slice(0,10);
+  if (datePicker && !datePicker.value) datePicker.value = todayISO;
+  loadMatchesFor(normalizeDateInput(datePicker?.value || todayISO));
+})();
