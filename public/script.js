@@ -55,11 +55,49 @@ async function loadMatches(dateStr){
     const data = await r.json();
     state.leagues = Array.isArray(data.leagues) ? data.leagues : [];
     buildLeagueChips();
-    renderMatches();   // podczas renderu zaznaczymy wcześniej wybrane selekcje (po matchId)
+    renderMatches();
+
+    // komunikaty
+    const hasLimit = (data.meta?.errors || []).some(e => e.status === 429);
+    const hasAuth  = (data.meta?.errors || []).some(e => e.status === 401 || e.status === 403);
+
+    const banner = document.getElementById('infoBanner') || (() => {
+      const b = document.createElement('div');
+      b.id = 'infoBanner';
+      b.style.margin = '10px';
+      b.style.padding = '10px';
+      b.style.border = '1px solid #333';
+      b.style.background = '#232323';
+      b.style.borderRadius = '8px';
+      b.style.color = '#ddd';
+      matchesWrap.parentElement.insertBefore(b, matchesWrap);
+      return b;
+    })();
+
+    banner.innerHTML = ""; // reset
+
+    if (hasLimit) {
+      banner.innerHTML = "Przekroczono limit zapytań The Odds API (429). Spróbuj za kilka minut.";
+    } else if (hasAuth) {
+      banner.innerHTML = "Błąd autoryzacji do The Odds API (401/403). Sprawdź klucz w Cloudflare Pages → Environment variables.";
+    } else if (!state.leagues.length) {
+      if (data.nextDate && data.nextDate !== dateStr) {
+        banner.innerHTML = `Brak kursów dla tej daty. Najbliższe mecze: <strong>${data.nextDate}</strong> <button id="goNextDate" style="margin-left:8px; padding:4px 8px;">Przejdź</button>`;
+        banner.querySelector('#goNextDate').addEventListener('click', ()=>{
+          datePicker.value = data.nextDate;
+          loadMatches(data.nextDate);
+        });
+      } else {
+        banner.innerHTML = "Brak kursów na ten dzień (jeszcze nieopublikowane lub przerwa).";
+      }
+    } else {
+      banner.remove();
+    }
   } catch(e){
-    matchesWrap.innerHTML = `<div class="league glass"><div class="muted" style="padding:12px">Błąd ładowania danych.</div></div>`;
+    matchesWrap.innerHTML = `<div class="league-section"><div style="padding:12px;color:#ccc">Błąd ładowania danych.</div></div>`;
   }
 }
+
 function renderSkeleton(){
   matchesWrap.innerHTML = '';
   const skeleton = document.createElement('div');
